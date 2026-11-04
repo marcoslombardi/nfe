@@ -1,10 +1,12 @@
 package com.fincatto.documentofiscal.nfe400.classes.nota;
 
-import com.fincatto.documentofiscal.DFBase;
-import com.fincatto.documentofiscal.validadores.DFBigDecimalValidador;
 import java.math.BigDecimal;
+
 import org.simpleframework.xml.Element;
 import org.simpleframework.xml.Order;
+
+import com.fincatto.documentofiscal.DFBase;
+import com.fincatto.documentofiscal.validadores.DFBigDecimalValidador;
 
 /**
  * UB84
@@ -12,21 +14,20 @@ import org.simpleframework.xml.Order;
  * @author Edivaldo Merlo Stens
  * @author Ommega Data
  */
-@SuppressWarnings("removal")
 @Order(elements = {"gMonoPadrao", "gMonoReten", "gMonoRet", "gMonoDif", "gIBSMonoAdRem", "gIBSMonoAdValorem", "gCBSMonoAdRem", "gCBSMonoAdValorem", "vTotIBSMonoItem", "vTotCBSMonoItem"})
 public class NFNotaInfoItemImpostoIBSCBSMonofasia extends DFBase {
 
   private static final long serialVersionUID = -366528394939416671L;
 
-  @Deprecated(since = "2025.002-RTC-1.5", forRemoval = true)
+  @Deprecated()
   @Element(required = false)
   private NFNotaInfoItemImpostoIBSCBSMonofasicaGMonoPadrao gMonoPadrao; // UB84a
 
-  @Deprecated(since = "2025.002-RTC-1.5", forRemoval = true)
+  @Deprecated()
   @Element(required = false)
   private NFNotaInfoItemImpostoIBSCBSMonofasicaGMonoReten gMonoReten; // UB90
 
-  @Deprecated(since = "2025.002-RTC-1.5", forRemoval = true)
+  @Deprecated()
   @Element(required = false)
   private NFNotaInfoItemImpostoIBSCBSMonofasicaGMonoRet gMonoRet; // UB94
 
