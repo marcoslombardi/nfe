@@ -65,6 +65,19 @@ class DanfeTotaisTest {
     }
 
     @Test
+    void deveImprimirVNFTotComoTotalDaNotaQuandoInformadoECaiParaVNFSemEle() throws Exception {
+        final NFNotaInfo info = DanfeFixtures.notaProcessada().getNota().getInfo();
+        info.getTotal().getIcmsTotal().setValorTotalNFe(new java.math.BigDecimal("111.11"));
+        final String semVNFTot = desenhar(info);
+        Assertions.assertTrue(semVNFTot.contains("111,11"));
+
+        info.getTotal().setVNFTot(new java.math.BigDecimal("222.22"));
+        final String comVNFTot = desenhar(info);
+        Assertions.assertTrue(comVNFTot.contains("222,22"));
+        Assertions.assertFalse(comVNFTot.contains("111,11"));
+    }
+
+    @Test
     void deveDesenharDestinatarioETotaisDaNota() throws Exception {
         final NFNotaInfo info = DanfeFixtures.notaProcessada().getNota().getInfo();
         final String texto = desenhar(info);
@@ -112,6 +125,38 @@ class DanfeTotaisTest {
         info.getTransporte().setVeiculo(null);
         info.getTransporte().setVolumes(null);
         Assertions.assertTrue(desenhar(info).contains("DESTINAT\u00c1RIO / REMETENTE"));
+    }
+
+    @Test
+    void deveAbreviarOFreteEFormatarCepTelefoneEPesosComoNoModeloDaNt() throws Exception {
+        final NFNotaInfo info = DanfeFixtures.notaProcessada().getNota().getInfo();
+        info.getTransporte().setModalidadeFrete(com.fincatto.documentofiscal.nfe400.classes.NFModalidadeFrete.CONTRATACAO_POR_CONTA_DO_REMETENTE);
+        info.getDestinatario().getEndereco().setCep("90035032");
+        info.getDestinatario().getEndereco().setTelefone("5130309700");
+        final String texto = desenhar(info);
+        Assertions.assertTrue(texto.contains("0 - Remetente"), texto);
+        Assertions.assertFalse(texto.contains("Contrata\u00e7\u00e3o do frete"), texto);
+        Assertions.assertTrue(texto.contains("90035-032"), "CEP do destinat\u00e1rio");
+        Assertions.assertTrue(texto.contains("(51) 3030-9700"), "telefone do destinat\u00e1rio");
+        Assertions.assertTrue(texto.matches(".*PESO BRUTO.* kg.*"), "peso em kg");
+    }
+
+    @Test
+    void deveImprimirOsDadosDaFaturaQuandoNaoHaDuplicatas() throws Exception {
+        final NFNotaInfo info = DanfeFixtures.notaProcessada().getNota().getInfo();
+        final com.fincatto.documentofiscal.nfe400.classes.nota.NFNotaInfoFatura fatura = new com.fincatto.documentofiscal.nfe400.classes.nota.NFNotaInfoFatura();
+        fatura.setNumeroFatura("FAT-123");
+        fatura.setValorOriginalFatura(new java.math.BigDecimal("300.00"));
+        fatura.setValorDesconto(new java.math.BigDecimal("30.18"));
+        fatura.setValorLiquidoFatura(new java.math.BigDecimal("269.82"));
+        info.getCobranca().setFatura(fatura);
+        info.getCobranca().setParcelas(null);
+        final String texto = desenhar(info);
+        Assertions.assertTrue(texto.contains("FATURA / DUPLICATAS"), texto);
+        for (final String esperado : new String[]{"NÚMERO DA FATURA", "FAT-123", "VALOR ORIGINAL", "300,00", "VALOR DO DESCONTO", "30,18", "VALOR LÍQUIDO", "269,82"}) {
+            Assertions.assertTrue(texto.contains(esperado), esperado);
+        }
+        Assertions.assertFalse(texto.contains("FATURA/DUPLICATA"), "sem duplicatas, sem as colunas das duplicatas");
     }
 
     @Test

@@ -5,7 +5,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Formatacoes de texto do DANFE (CNPJ/CPF, chave de acesso, valores, datas).
+ * Formatacoes de texto do DANFE (CNPJ/CPF, chave de acesso, CEP, telefone, valores, datas).
  * Todos os metodos aceitam null e devolvem string vazia.
  *
  * @author Marcos Lombardi de Andrade
@@ -54,7 +54,7 @@ final class DanfeFormatador {
     }
 
     /**
-     * Formata o numero da nota como "No 000.000.000".
+     * Formata o numero da nota com nove digitos e ponto a cada tres, como no modelo da NT 2026.010 (500 fica "No 000.000.500").
      *
      * @param numero numero da nota
      * @return numero formatado
@@ -63,8 +63,35 @@ final class DanfeFormatador {
         if (numero == null) {
             return "";
         }
-        final String preenchido = String.format("%9s", numero).replace(' ', '0');
-        return "N\u00ba " + preenchido.replaceAll("(\\d{3})(\\d{3})(\\d{3})", "$1.$2.$3");
+        return "N\u00ba " + String.format("%9s", numero).replace(' ', '0').replaceAll("(?<=\\d)(?=(\\d{3})+$)", ".");
+    }
+
+    /**
+     * Formata o CEP (00000-000); outro valor e devolvido como esta.
+     *
+     * @param cep somente digitos
+     * @return CEP formatado
+     */
+    static String cep(final String cep) {
+        if (cep == null) {
+            return "";
+        }
+        return cep.matches("\\d{8}") ? cep.substring(0, 5) + "-" + cep.substring(5) : cep;
+    }
+
+    /**
+     * Formata o telefone com DDD, (00) 0000-0000 ou (00) 00000-0000, sem o 55 do pais quando vier junto; outro valor e devolvido
+     * como esta.
+     *
+     * @param telefone somente digitos
+     * @return telefone formatado
+     */
+    static String telefone(final String telefone) {
+        if (telefone == null) {
+            return "";
+        }
+        final String numero = telefone.matches("55\\d{10,11}") ? telefone.substring(2) : telefone;
+        return numero.matches("\\d{10,11}") ? numero.replaceAll("(\\d{2})(\\d{4,5})(\\d{4})", "($1) $2-$3") : telefone;
     }
 
     /**

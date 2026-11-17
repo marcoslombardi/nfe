@@ -118,7 +118,7 @@ class DanfeCanvasTest {
     }
 
     @Test
-    void deveEmbutirALiberationSansRegularENegritoNoPdf() throws Exception {
+    void deveUsarAHelveticaRegularENegritoSemEmbutirNoPdf() throws Exception {
         final byte[] pdf = pdf(canvas -> {
             canvas.titulo("TITULO");
             canvas.caixa(0, 100f, 24f, "ROTULO", "valor", DanfeCanvas.Alinhamento.ESQUERDA);
@@ -127,23 +127,26 @@ class DanfeCanvasTest {
             final java.util.List<String> nomes = new java.util.ArrayList<>();
             for (final org.apache.pdfbox.cos.COSName nome : documento.getPage(0).getResources().getFontNames()) {
                 final org.apache.pdfbox.pdmodel.font.PDFont fonte = documento.getPage(0).getResources().getFont(nome);
-                Assertions.assertTrue(fonte.isEmbedded(), "fonte nao embutida: " + fonte.getName());
+                Assertions.assertFalse(fonte.isEmbedded(), "fonte embutida: " + fonte.getName());
                 nomes.add(fonte.getName());
             }
-            Assertions.assertTrue(nomes.stream().anyMatch(n -> n.contains("LiberationSans") && n.contains("Bold")), nomes.toString());
-            Assertions.assertTrue(nomes.stream().anyMatch(n -> n.contains("LiberationSans") && !n.contains("Bold")), nomes.toString());
+            Assertions.assertTrue(nomes.contains("Helvetica"), nomes.toString());
+            Assertions.assertTrue(nomes.contains("Helvetica-Bold"), nomes.toString());
         }
     }
 
     @Test
-    void devePreservarCaracteresForaDoLatin1ESubstituirOQueAFonteNaoTem() throws Exception {
+    void devePreservarOLatin1ESubstituirOQueEstaForaDoWinAnsi() throws Exception {
         final byte[] pdf = pdf(canvas -> {
+            canvas.caixa(0, 200f, 24f, "R", "A\u00c7\u00c3O \u00e1\u00e9\u00ed\u00f3\u00fa \u00fc \u00ba \u20ac", DanfeCanvas.Alinhamento.ESQUERDA);
+            canvas.avancar(24f);
             canvas.caixa(0, 200f, 24f, "R", "\u0141\u00f3d\u017a", DanfeCanvas.Alinhamento.ESQUERDA);
             canvas.avancar(24f);
             canvas.caixa(0, 200f, 24f, "R", "A\uD83D\uDE00B", DanfeCanvas.Alinhamento.ESQUERDA);
         });
         final String texto = texto(pdf, 1);
-        Assertions.assertTrue(texto.contains("\u0141\u00f3d\u017a"), texto);
+        Assertions.assertTrue(texto.contains("A\u00c7\u00c3O \u00e1\u00e9\u00ed\u00f3\u00fa \u00fc \u00ba \u20ac"), texto);
+        Assertions.assertTrue(texto.contains("?\u00f3d?"), texto);
         Assertions.assertTrue(texto.contains("A?B"), texto);
     }
 
@@ -153,6 +156,14 @@ class DanfeCanvasTest {
         final byte[] pdf = pdf(canvas -> canvas.caixa(0, 80f, 24f, "R", longo, DanfeCanvas.Alinhamento.DIREITA));
         final String texto = texto(pdf, 1).replace("\n", "");
         Assertions.assertTrue(texto.length() < 100, "valor deveria ter sido cortado, mas tem " + texto.length());
+    }
+
+    @Test
+    void caixaDeveDiminuirAFonteDoValorEmVezDeCortarOsDigitos() throws Exception {
+        // maior valor do XSD (TDec_1302) na coluna VALOR da fatura, a mais estreita dos quadros com valores
+        final String valor = "9.999.999.999.999,99";
+        final byte[] pdf = pdf(canvas -> canvas.caixa(0, 46.8f, 17.5f, "VALOR", valor, DanfeCanvas.Alinhamento.ESQUERDA));
+        Assertions.assertTrue(texto(pdf, 1).contains(valor), texto(pdf, 1));
     }
 
     @Test
@@ -220,6 +231,35 @@ class DanfeCanvasTest {
     }
 
     @Test
+    void deveEscreverAFolhaComOTotalDePaginasConhecidoAoFechar() throws Exception {
+        final byte[] pdf = pdf(canvas -> {
+            canvas.folha(0, 200f, "SERIE 001   ", 6.5f);
+            canvas.novaPagina();
+            canvas.folha(0, 200f, "", 6.5f);
+            canvas.novaPagina();
+        });
+        Assertions.assertTrue(texto(pdf, 1).replaceAll("\\s+", " ").contains("SERIE 001 FOLHA 1/3"), texto(pdf, 1));
+        Assertions.assertTrue(texto(pdf, 2).contains("FOLHA 2/3"), texto(pdf, 2));
+        Assertions.assertFalse(texto(pdf, 3).contains("FOLHA"), texto(pdf, 3));
+    }
+
+    @Test
+    void deveDesenharOCabecalhoDasFolhasSeguintesSoNasPaginasNovas() throws Exception {
+        final byte[] pdf = pdf(canvas -> {
+            canvas.caixa(0, 100f, 24f, "R", "PRIMEIRA", DanfeCanvas.Alinhamento.ESQUERDA);
+            canvas.cabecalhoDasFolhasSeguintes(() -> {
+                canvas.caixa(0, 100f, 24f, "R", "CABECALHO", DanfeCanvas.Alinhamento.ESQUERDA);
+                canvas.avancar(24f);
+            });
+            canvas.novaPagina();
+            // o conteudo da pagina nova continua abaixo do cabecalho
+            Assertions.assertEquals(org.apache.pdfbox.pdmodel.common.PDRectangle.A4.getHeight() - DanfeCanvas.MARGEM - 24f, canvas.y(), 0.01f);
+        });
+        Assertions.assertFalse(texto(pdf, 1).contains("CABECALHO"), texto(pdf, 1));
+        Assertions.assertTrue(texto(pdf, 2).contains("CABECALHO"), texto(pdf, 2));
+    }
+
+    @Test
     void imagemValidaDeveSerDesenhadaEInvalidaOuNulaIgnorada() throws Exception {
         final byte[] imagem = png();
         final byte[] comImagem = pdf(canvas -> canvas.imagem(0, 50f, 50f, imagem));
@@ -244,5 +284,141 @@ class DanfeCanvasTest {
         final int qr = tamanhoDoConteudo(pdf(canvas -> canvas.qrCode(0, 80f, "https://www.nfe.fazenda.gov.br/portal")));
         Assertions.assertTrue(barras > vazio + 200);
         Assertions.assertTrue(qr > vazio + 200);
+    }
+
+    @Test
+    void qrCodeDeveUsarONivelMDeCorrecaoDeErros() throws Exception {
+        final String conteudo = "https://www.fazenda.pr.gov.br/nfce/qrcode?p=41261011222333000181650010000012341876543210|2|1|1|ABCDEF0123456789";
+        final byte[] pdf = pdf(canvas -> {
+            canvas.avancar(20f);
+            canvas.qrCode(20f, 120f, conteudo);
+        });
+        // le o QR Code desenhado, como um leitor faria, e confere o nivel exigido pelo Manual de Padroes do DANFE NFC-e (item 4.5.2)
+        try (final PDDocument documento = Loader.loadPDF(pdf)) {
+            final BufferedImage imagem = new org.apache.pdfbox.rendering.PDFRenderer(documento).renderImageWithDPI(0, 200);
+            final int[] pixels = imagem.getRGB(0, 0, imagem.getWidth(), imagem.getHeight(), null, 0, imagem.getWidth());
+            final com.google.zxing.Result lido = new com.google.zxing.qrcode.QRCodeReader().decode(new com.google.zxing.BinaryBitmap(
+                    new com.google.zxing.common.HybridBinarizer(new com.google.zxing.RGBLuminanceSource(imagem.getWidth(), imagem.getHeight(), pixels))));
+            Assertions.assertEquals(conteudo, lido.getText());
+            Assertions.assertEquals("M", lido.getResultMetadata().get(com.google.zxing.ResultMetadataType.ERROR_CORRECTION_LEVEL));
+        }
+    }
+
+    @Test
+    void devePermitirPaginaComTamanhoEMargemProprios() throws Exception {
+        try (final PDDocument documento = new PDDocument(); final ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
+            final DanfeCanvas canvas = new DanfeCanvas(documento, new org.apache.pdfbox.pdmodel.common.PDRectangle(212f, 400f), 8f);
+            Assertions.assertEquals(196f, canvas.larguraUtil(), 0.001f);
+            Assertions.assertEquals(392f, canvas.y(), 0.001f);
+            canvas.fechar();
+            documento.save(saida);
+            try (final PDDocument lido = Loader.loadPDF(saida.toByteArray())) {
+                Assertions.assertEquals(212f, lido.getPage(0).getMediaBox().getWidth(), 0.001f);
+                Assertions.assertEquals(400f, lido.getPage(0).getMediaBox().getHeight(), 0.001f);
+            }
+        }
+    }
+
+    /** Posicao x do primeiro e do fim do ultimo glifo do texto desenhado, em pontos a partir da borda da pagina. */
+    private static float[] extensaoHorizontal(final byte[] pdf) throws Exception {
+        final float[] extensao = {Float.MAX_VALUE, 0f};
+        try (final PDDocument documento = Loader.loadPDF(pdf)) {
+            new PDFTextStripper() {
+                @Override
+                protected void processTextPosition(final org.apache.pdfbox.text.TextPosition texto) {
+                    extensao[0] = Math.min(extensao[0], texto.getX());
+                    extensao[1] = Math.max(extensao[1], texto.getX() + texto.getWidth());
+                }
+            }.getText(documento);
+        }
+        return extensao;
+    }
+
+    private static byte[] pdfNoCupom(final DanfeCanvas.Alinhamento alinhamento) throws Exception {
+        try (final PDDocument documento = new PDDocument(); final ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
+            final DanfeCanvas canvas = new DanfeCanvas(documento, new org.apache.pdfbox.pdmodel.common.PDRectangle(212f, 400f), 8f);
+            canvas.texto(0, canvas.larguraUtil(), "ABC", 10f, alinhamento, false);
+            canvas.fechar();
+            documento.save(saida);
+            return saida.toByteArray();
+        }
+    }
+
+    @Test
+    void deveAlinharTextoNoCentroEADireitaDentroDaLargura() throws Exception {
+        final float[] esquerda = extensaoHorizontal(pdfNoCupom(DanfeCanvas.Alinhamento.ESQUERDA));
+        final float[] centro = extensaoHorizontal(pdfNoCupom(DanfeCanvas.Alinhamento.CENTRO));
+        final float[] direita = extensaoHorizontal(pdfNoCupom(DanfeCanvas.Alinhamento.DIREITA));
+        Assertions.assertEquals(8f, esquerda[0], 0.5f);
+        Assertions.assertTrue(esquerda[0] < centro[0] && centro[0] < direita[0]);
+        Assertions.assertEquals(106f, (centro[0] + centro[1]) / 2, 0.5f);
+        Assertions.assertEquals(204f, direita[1], 0.5f);
+    }
+
+    @Test
+    void deveQuebrarTextoNegritoEmVariasLinhasERetornarAltura() throws Exception {
+        final float[] altura = new float[1];
+        final StringBuilder longo = new StringBuilder();
+        for (int i = 0; i < 40; i++) {
+            longo.append("palavra ");
+        }
+        final byte[] pdf = pdf(canvas -> altura[0] = canvas.texto(0, 100f, longo.toString(), 8f, DanfeCanvas.Alinhamento.ESQUERDA, true));
+        Assertions.assertTrue(altura[0] > 3 * 8f * 1.2f);
+        Assertions.assertTrue(texto(pdf, 1).contains("palavra"));
+    }
+
+    /** Operadores do primeiro fluxo de conteudo da pagina, como texto. */
+    private static String conteudoComoTexto(final byte[] pdf) throws Exception {
+        try (final PDDocument documento = Loader.loadPDF(pdf); java.io.InputStream conteudo = documento.getPage(0).getContents()) {
+            return new String(conteudo.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1);
+        }
+    }
+
+    @Test
+    void deveDesenharLinhaHorizontalSolidaETracejadaSemMoverOCursor() throws Exception {
+        final float[] y = new float[2];
+        final byte[] pdf = pdf(canvas -> {
+            y[0] = canvas.y();
+            canvas.linhaHorizontal(0, 100f, 1.2f, false);
+            canvas.linhaHorizontal(0, 100f, 0.5f, true);
+            y[1] = canvas.y();
+        });
+        Assertions.assertEquals(y[0], y[1], 0.001f);
+        final String conteudo = conteudoComoTexto(pdf);
+        Assertions.assertTrue(conteudo.contains("1.2 w"));
+        Assertions.assertTrue(conteudo.contains("[3 2 ] 0 d"));
+        Assertions.assertEquals(1, conteudo.split("\\[3 2 \\] 0 d", -1).length - 1);
+    }
+
+    @Test
+    void deveDesenharTextoPreformatadoPreservandoEspacosEmFonteMonoespacada() throws Exception {
+        final float[] altura = new float[1];
+        final byte[] pdf = pdf(canvas -> altura[0] = canvas.textoPreformatado(0, 200f, "A    B\r\nCC", 7f));
+        Assertions.assertEquals(2 * 7f * 1.2f, altura[0], 0.001f);
+        final java.util.List<org.apache.pdfbox.text.TextPosition> glifos = new java.util.ArrayList<>();
+        try (final PDDocument documento = Loader.loadPDF(pdf)) {
+            new PDFTextStripper() {
+                @Override
+                protected void processTextPosition(final org.apache.pdfbox.text.TextPosition texto) {
+                    glifos.add(texto);
+                }
+            }.getText(documento);
+        }
+        final float xA = glifos.stream().filter(g -> "A".equals(g.getUnicode())).findFirst().get().getX();
+        final float xB = glifos.stream().filter(g -> "B".equals(g.getUnicode())).findFirst().get().getX();
+        // 5 colunas de 0,6 * 7 pt: os 4 espacos entre A e B foram mantidos
+        Assertions.assertEquals(5 * 0.6f * 7f, xB - xA, 0.5f);
+    }
+
+    @Test
+    void deveQuebrarLinhaPreformatadaMaiorQueALarguraPorCaractereSemPerderNenhum() throws Exception {
+        final float[] altura = new float[1];
+        final StringBuilder longa = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            longa.append('X');
+        }
+        final byte[] pdf = pdf(canvas -> altura[0] = canvas.textoPreformatado(0, 100f, longa.toString(), 7f));
+        Assertions.assertTrue(altura[0] >= 4 * 7f * 1.2f);
+        Assertions.assertEquals(100, texto(pdf, 1).replaceAll("\\s", "").length());
     }
 }

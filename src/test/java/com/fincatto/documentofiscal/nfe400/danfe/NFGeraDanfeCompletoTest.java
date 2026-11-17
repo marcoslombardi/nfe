@@ -46,7 +46,7 @@ class NFGeraDanfeCompletoTest {
 
     private static final String[] CAMPOS = {
             // cabecalho
-            "NATUREZA DA OPERAÇÃO", "PROTOCOLO DE AUTORIZAÇÃO DE USO", "INSCRIÇÃO ESTADUAL", "INSC. ESTADUAL DO SUBST. TRIBUTÁRIO",
+            "NATUREZA DA OPERAÇÃO", "PROTOCOLO DE AUTORIZAÇÃO DE USO", "INSCRIÇÃO ESTADUAL", "INSCRIÇÃO ESTADUAL DO SUBSTITUTO TRIBUTÁRIO",
             "CNPJ / CPF", "CÓDIGO DO REGIME TRIBUTÁRIO", "TIPO DE REGIME DE APURAÇÃO DO IBS E DA CBS",
             // destinatario
             "NOME / RAZÃO SOCIAL", "DATA DE EMISSÃO", "ENDEREÇO", "BAIRRO / DISTRITO", "CEP", "DATA DE ENTRADA / SAÍDA",
@@ -183,6 +183,7 @@ class NFGeraDanfeCompletoTest {
     @Test
     void deveGerarPdfCompletoPeloObjetoNotaProcessada() throws Exception {
         final NFNotaProcessada nota = FabricaDeObjetosFake.getNFNotaProcessada();
+        nota.getProtocolo().getProtocoloInfo().setStatus("100");
         try (final PDDocument documento = Loader.loadPDF(gerador.gerar(nota, logotipo()))) {
             Assertions.assertTrue(documento.getNumberOfPages() >= 1);
         }

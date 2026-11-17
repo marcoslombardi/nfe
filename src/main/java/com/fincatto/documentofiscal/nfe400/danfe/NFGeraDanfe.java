@@ -1,6 +1,8 @@
 package com.fincatto.documentofiscal.nfe400.danfe;
 
 import com.fincatto.documentofiscal.DFAmbiente;
+import com.fincatto.documentofiscal.DFModelo;
+import com.fincatto.documentofiscal.nfe400.classes.NFProtocoloInfo;
 import com.fincatto.documentofiscal.nfe400.classes.nota.NFNotaProcessada;
 import com.fincatto.documentofiscal.utils.DFPersister;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -9,6 +11,9 @@ import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Gera o DANFE (NF-e modelo 55, A4 retrato) em PDF a partir do XML do nfeProc.
@@ -19,6 +24,10 @@ import java.io.IOException;
 public class NFGeraDanfe {
 
     private static final String MENSAGEM_SEM_PROTOCOLO = "XML sem protocolo de autoriza\u00e7\u00e3o: n\u00e3o \u00e9 poss\u00edvel gerar o DANFE";
+    private static final String MENSAGEM_NAO_AUTORIZADA = "NF-e sem protocolo de autorização válido (cStat diferente de 100, 120 ou 150): não é possível gerar o DANFE";
+    /** cStat que indicam NF-e autorizada: 100 (autorizado o uso), 120 e 150 (autorizado fora do prazo). */
+    static final Set<String> STATUS_AUTORIZADOS = new HashSet<>(Arrays.asList("100", "120", "150"));
+    private static final String MENSAGEM_NAO_E_NFE = "O XML n\u00e3o \u00e9 de uma NF-e (modelo 55): para NFC-e use NFGeraDanfeNfce";
     private static final String MENSAGEM_NOTA_NAO_INFORMADA = "Nota processada n\u00e3o informada";
     private static final String MENSAGEM_NOTA_SEM_DADOS = "Nota processada sem os dados da NF-e (identifica\u00e7\u00e3o e emitente)";
     private static final String MENSAGEM_ERRO_GERAR_PDF = "Erro ao gerar o PDF do DANFE";
@@ -74,9 +83,7 @@ public class NFGeraDanfe {
     public byte[] gerar(final NFNotaProcessada nota, final byte[] logoImage, final DanfeCreditos creditos) {
         validar(nota);
         final byte[] logo = logoValido(logoImage);
-        final Pdf primeiro = renderizar(nota, logo, 1, creditos);
-        // o total de folhas so e conhecido depois de desenhar: refaz quando a nota passa de uma pagina
-        return primeiro.paginas == 1 ? primeiro.bytes : renderizar(nota, logo, primeiro.paginas, creditos).bytes;
+        return renderizar(nota, logo, creditos);
     }
 
     /**
@@ -92,9 +99,16 @@ public class NFGeraDanfe {
         if (nota.getProtocolo() == null) {
             throw new IllegalArgumentException(MENSAGEM_SEM_PROTOCOLO);
         }
+        final NFProtocoloInfo protocoloInfo = nota.getProtocolo().getProtocoloInfo();
+        if (protocoloInfo == null || !STATUS_AUTORIZADOS.contains(protocoloInfo.getStatus())) {
+            throw new IllegalArgumentException(MENSAGEM_NAO_AUTORIZADA);
+        }
         if (nota.getNota() == null || nota.getNota().getInfo() == null || nota.getNota().getInfo().getIdentificacao() == null
                 || nota.getNota().getInfo().getEmitente() == null) {
             throw new IllegalArgumentException(MENSAGEM_NOTA_SEM_DADOS);
+        }
+        if (nota.getNota().getInfo().getIdentificacao().getModelo() != DFModelo.NFE) {
+            throw new IllegalArgumentException(MENSAGEM_NAO_E_NFE);
         }
     }
 
@@ -103,43 +117,25 @@ public class NFGeraDanfe {
      *
      * @param nota nota processada
      * @param logo logotipo ja validado, ou null
-     * @param totalFolhas total de folhas impresso no cabecalho
      * @param creditos rodape personalizado, ou null
-     * @return PDF e numero de paginas geradas
+     * @return bytes do PDF
      */
-    private Pdf renderizar(final NFNotaProcessada nota, final byte[] logo, final int totalFolhas, final DanfeCreditos creditos) {
+    private byte[] renderizar(final NFNotaProcessada nota, final byte[] logo, final DanfeCreditos creditos) {
         try (final PDDocument documento = new PDDocument(); final ByteArrayOutputStream saida = new ByteArrayOutputStream()) {
             final DanfeCanvas canvas = new DanfeCanvas(documento, creditos);
-            DanfeCabecalho.desenhar(canvas, nota, logo, totalFolhas);
+            DanfeCabecalho.desenhar(canvas, nota, logo);
+            canvas.cabecalhoDasFolhasSeguintes(() -> DanfeCabecalho.identificacao(canvas, nota, logo));
             DanfeTotais.desenhar(canvas, nota.getNota().getInfo());
             DanfeItens.desenhar(canvas, nota.getNota().getInfo().getItens());
             DanfeRodape.desenhar(canvas, nota.getNota());
             if (nota.getNota().getInfo().getIdentificacao().getAmbiente() == DFAmbiente.HOMOLOGACAO) {
                 canvas.marcaDagua("SEM VALOR FISCAL");
             }
-            final int paginas = canvas.paginas();
             canvas.fechar();
             documento.save(saida);
-            return new Pdf(saida.toByteArray(), paginas);
+            return saida.toByteArray();
         } catch (final IOException e) {
             throw new IllegalStateException(MENSAGEM_ERRO_GERAR_PDF, e);
-        }
-    }
-
-    /**
-     * PDF gerado e seu numero de paginas.
-     */
-    private static final class Pdf {
-        private final byte[] bytes;
-        private final int paginas;
-
-        /**
-         * @param bytes conteudo do PDF
-         * @param paginas numero de paginas
-         */
-        private Pdf(final byte[] bytes, final int paginas) {
-            this.bytes = bytes;
-            this.paginas = paginas;
         }
     }
 

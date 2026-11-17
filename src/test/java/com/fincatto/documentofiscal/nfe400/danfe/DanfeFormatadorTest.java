@@ -30,7 +30,27 @@ class DanfeFormatadorTest {
     void deveFormatarNumeroESerie() {
         Assertions.assertEquals("N\u00ba 000.000.001", DanfeFormatador.numeroNota("1"));
         Assertions.assertEquals("N\u00ba 123.456.789", DanfeFormatador.numeroNota("123456789"));
+        Assertions.assertEquals("N\u00ba 000.000.500", DanfeFormatador.numeroNota("000000500"));
+        Assertions.assertEquals("N\u00ba 000.001.234", DanfeFormatador.numeroNota("1234"));
         Assertions.assertEquals("001", DanfeFormatador.serie("1"));
+    }
+
+    @Test
+    void deveFormatarCep() {
+        Assertions.assertEquals("88101-000", DanfeFormatador.cep("88101000"));
+        Assertions.assertEquals("8810100", DanfeFormatador.cep("8810100"));
+        Assertions.assertEquals("", DanfeFormatador.cep(null));
+    }
+
+    @Test
+    void deveFormatarTelefoneComDddESemOCodigoDoPais() {
+        Assertions.assertEquals("(48) 3035-9700", DanfeFormatador.telefone("4830359700"));
+        Assertions.assertEquals("(48) 99999-1234", DanfeFormatador.telefone("48999991234"));
+        Assertions.assertEquals("(48) 3035-9700", DanfeFormatador.telefone("554830359700"));
+        Assertions.assertEquals("(48) 99999-1234", DanfeFormatador.telefone("5548999991234"));
+        Assertions.assertEquals("(55) 3222-1111", DanfeFormatador.telefone("5532221111"), "DDD 55 sem o codigo do pais");
+        Assertions.assertEquals("35059700", DanfeFormatador.telefone("35059700"));
+        Assertions.assertEquals("", DanfeFormatador.telefone(null));
     }
 
     @Test

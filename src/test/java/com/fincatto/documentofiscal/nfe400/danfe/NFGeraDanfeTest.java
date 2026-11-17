@@ -44,7 +44,43 @@ class NFGeraDanfeTest {
     }
 
     @Test
-    void deveGerarPdfValidoParaNotaProcessada() throws Exception {
+    void deveRejeitarProtocoloComStatusNaoAutorizado() {
+        for (final String status : new String[]{"204", "110", "301", "OK"}) {
+            final NFNotaProcessada nota = DanfeFixtures.notaProcessada();
+            nota.getProtocolo().getProtocoloInfo().setStatus(status);
+            Assertions.assertThrows(IllegalArgumentException.class, () -> gerador.gerar(nota, null), "cStat " + status);
+            Assertions.assertThrows(IllegalArgumentException.class, () -> gerador.gerar(nota.toString(), null), "cStat " + status);
+        }
+    }
+
+    @Test
+    void deveRejeitarProtocoloSemInfoDeProtocolo() {
+        final NFNotaProcessada nota = DanfeFixtures.notaProcessada();
+        nota.getProtocolo().setProtocoloInfo(null);
+        final IllegalArgumentException e = Assertions.assertThrows(IllegalArgumentException.class, () -> gerador.gerar(nota, null));
+        Assertions.assertTrue(e.getMessage().contains("protocolo"));
+    }
+
+    @Test
+    void deveRejeitarNotaQueNaoEModelo55() {
+        final NFNotaProcessada nota = DanfeFixtures.notaProcessada();
+        nota.getNota().getInfo().getIdentificacao().setModelo(com.fincatto.documentofiscal.DFModelo.NFCE);
+        final IllegalArgumentException e = Assertions.assertThrows(IllegalArgumentException.class, () -> gerador.gerar(nota, null));
+        Assertions.assertTrue(e.getMessage().contains("NF-e"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> gerador.gerar(nota.toString(), null));
+    }
+
+    @Test
+    void deveGerarDanfeParaStatusAutorizados() {
+        for (final String status : new String[]{"100", "120", "150"}) {
+            final NFNotaProcessada nota = DanfeFixtures.notaProcessada();
+            nota.getProtocolo().getProtocoloInfo().setStatus(status);
+            Assertions.assertTrue(gerador.gerar(nota, null).length > 0, "cStat " + status);
+        }
+    }
+
+    @Test
+    void deveGerarPdfValidoParaNotaProcessada()throws Exception {
         final byte[] pdf = gerador.gerar(DanfeFixtures.xml(), null);
         Assertions.assertEquals("%PDF", new String(pdf, 0, 4, StandardCharsets.US_ASCII));
         try (final PDDocument documento = Loader.loadPDF(pdf)) {
@@ -191,6 +227,29 @@ class NFGeraDanfeTest {
             final String texto = textoDaPagina(documento, 1);
             Assertions.assertTrue(texto.contains("www.exemplo.com.br"));
             Assertions.assertFalse(texto.contains(longo));
+        }
+    }
+
+    @Test
+    void deveRepetirAIdentificacaoComAFolhaNoTopoDeTodasAsPaginas() throws Exception {
+        final com.fincatto.documentofiscal.nfe400.classes.nota.NFNotaInfo info = DanfeFixtures.notaProcessada().getNota().getInfo();
+        try (final PDDocument documento = Loader.loadPDF(gerador.gerar(xmlComItens(8, DFAmbiente.PRODUCAO), null))) {
+            final int total = documento.getNumberOfPages();
+            Assertions.assertTrue(total > 1);
+            for (int pagina = 1; pagina <= total; pagina++) {
+                final String texto = textoDaPagina(documento, pagina).replaceAll("\\s+", " ");
+                final String naPagina = "p\u00e1gina " + pagina;
+                Assertions.assertTrue(texto.contains(info.getEmitente().getRazaoSocial().substring(0, 20)), naPagina);
+                Assertions.assertTrue(texto.contains("DOCUMENTO AUXILIAR DA NOTA FISCAL ELETR\u00d4NICA"), naPagina);
+                Assertions.assertTrue(texto.contains("N\u00ba 999.999.999"), naPagina);
+                Assertions.assertTrue(texto.contains("S\u00c9RIE 999 FOLHA " + pagina + "/" + total), naPagina);
+                Assertions.assertTrue(texto.contains(DanfeFormatador.chaveAcesso(info.getChaveAcesso())), naPagina);
+                Assertions.assertTrue(texto.contains("NATUREZA DA OPERA\u00c7\u00c3O"), naPagina);
+                Assertions.assertTrue(texto.contains("INSCRI\u00c7\u00c3O ESTADUAL"), naPagina);
+                Assertions.assertTrue(texto.contains("CNPJ / CPF"), naPagina);
+                // o canhoto fica so na primeira folha
+                Assertions.assertEquals(pagina == 1, texto.contains("RECEBEMOS DE"), naPagina);
+            }
         }
     }
 }

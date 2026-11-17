@@ -140,6 +140,8 @@ byte[] homologacao = DFCadeiaCertificados.geraCadeiaCertificados(DFAmbiente.HOMO
 Files.write(Paths.get("/caminho/cadeia-homologacao.jks"), homologacao);
 ```
 
+O arquivo segue o tipo padrão de `KeyStore` do JDK (PKCS12 a partir do Java 9, JKS no Java 8); a extensão `.jks` é só o nome. Ele pode ser carregado como `"JKS"`, como no exemplo da configuração, ou como `"PKCS12"`, porque o JDK mantém a compatibilidade entre os dois formatos (`keystore.type.compat=true`, o padrão).
+
 As SEFAZ trocam seus certificados de tempos em tempos. Se aparecerem erros de SSL/handshake, gere a cadeia novamente. Lembre-se também de que o certificado A1 do emitente costuma valer apenas um ano.
 
 ### Certificado instalado no Windows (A1 ou A3)
@@ -379,12 +381,14 @@ Use a nota que veio em `getLoteAssinado()`: o XML assinado não pode ser alterad
 ### Gerar o DANFE em PDF
 O DANFE (NF-e modelo 55, A4 retrato, leiaute da NT 2026.010) é gerado a partir do XML autorizado (`nfeProc`), sem acessar a SEFAZ. Se a nota não tiver o protocolo de autorização, o método lança `IllegalArgumentException`.
 
+Fontes, negritos, alinhamentos e medidas seguem o modelo retrato da NT 2026.010. Quando a nota ocupa mais de uma folha, o topo de cada folha repete a identificação do emitente e da nota, e o quadro DANFE traz o número e o total de folhas ao lado da série (`SÉRIE 001   FOLHA 2/5`), como pede o MOC 7.0, Anexo II, itens 3.5 e 3.10.2.
+
 ```java
 byte[] pdf = facade.geraDanfe(xmlParaGuardar);
 Files.write(Paths.get("/caminho/danfe.pdf"), pdf);
 ```
 
-Também é possível passar a `NFNotaProcessada` no lugar do XML, e informar o logotipo do emitente (PNG, JPEG etc.). Sem logotipo, ou com uma imagem inválida, o espaço fica em branco:
+Também é possível passar a `NFNotaProcessada` no lugar do XML, e informar o logotipo do emitente (PNG, JPEG etc.). O logotipo ocupa o lado esquerdo do quadro do emitente, reduzido para caber sem distorcer, e os dados do emitente ficam alinhados à esquerda, depois dele. Sem logotipo, ou com uma imagem inválida, os dados do emitente ficam centralizados no quadro, como no modelo da NT:
 
 ```java
 byte[] logo = Files.readAllBytes(Paths.get("/caminho/logo.png"));
@@ -399,6 +403,36 @@ byte[] pdf = facade.geraDanfe(notaProcessada, logo, creditos);
 ```
 
 Notas emitidas em homologação saem com a marca d'água "SEM VALOR FISCAL". Se não precisar do `WSFacade`, use direto `new NFGeraDanfe().gerar(...)`, que não exige `NFeConfig` nem certificado.
+
+### Gerar o cupom DANFE NFC-e (modelo 65)
+O cupom da NFC-e (leiaute do Manual de Padrões do DANFE NFC-e e QR Code, versão 3.3) sai em papel térmico de **80 mm**, sem logotipo e em uma página só, com a altura do conteúdo. Se o cupom passar de 14400 pt (cerca de 5 m, o maior tamanho de página que os leitores de PDF aceitam), por exemplo com anexos muito longos, ele continua em novas páginas de 80 mm, sem partir uma linha ao meio, e a última página é cortada na altura do que foi impresso. As impressoras térmicas não imprimem rente à borda, então o texto respeita 1 mm de margem de cada lado (78 mm de área útil). O QR Code vem do `infNFeSupl` do XML:
+
+```java
+byte[] pdf = facade.geraDanfeNfce(xmlParaGuardar);
+Files.write(Paths.get("/caminho/cupom.pdf"), pdf);
+```
+
+Para imprimir os créditos do seu sistema no fim do cupom (qualquer texto de `DanfeCreditos` pode ser `null`):
+
+```java
+DanfeCreditos creditos = new DanfeCreditos("Desenvolvido por Minha Empresa", "www.minhaempresa.com.br");
+byte[] pdf = facade.geraDanfeNfce(xmlParaGuardar, creditos);
+```
+
+Para imprimir o comprovante do cartão (TEF), a confissão de dívida ou qualquer outro texto do seu sistema **depois do cupom**, na mesma página e separado por uma linha de corte, passe uma lista de `DanfeNfceAnexo`. O texto já vem pronto (por exemplo, o recibo que o TEF devolveu) e sai em fonte monoespaçada, com os espaços e as quebras de linha preservados (cerca de 48 colunas):
+
+```java
+List<DanfeNfceAnexo> anexos = Arrays.asList(
+        DanfeNfceAnexo.viaEstabelecimento(reciboLojaDoTef),
+        DanfeNfceAnexo.viaCliente(reciboClienteDoTef),
+        DanfeNfceAnexo.confissaoDeDivida(textoDaConfissao),
+        new DanfeNfceAnexo("OBSERVAÇÃO", "Qualquer outro texto"));
+byte[] pdf = facade.geraDanfeNfce(xmlParaGuardar, creditos, anexos);
+```
+
+A lib não confere o conteúdo dos anexos. Cada UF tem suas regras para o comprovante: no RS (IN RE 81/2022) e no CE (IN 87/2025), por exemplo, se o DANFE NFC-e for impresso, o comprovante sai no mesmo equipamento, então basta passar os anexos na mesma chamada; na BA o comprovante pode sair em outro equipamento, desde que traga o CNPJ do estabelecimento. Confirme a regra vigente na legislação da sua UF.
+
+Só aceita o modelo 65 e exige o protocolo de autorização. A exceção é a contingência off-line (`tpEmis=9`), em que o cupom sai da `NFe` ainda sem protocolo, com a mensagem "EMITIDA EM CONTINGÊNCIA". Em homologação, sai "EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO – SEM VALOR FISCAL". Também dá para usar direto `new NFGeraDanfeNfce().gerar(...)`, sem `NFeConfig` nem certificado.
 
 ### Consultar uma nota pela chave de acesso
 ```java
@@ -491,6 +525,8 @@ Rejeição não é exceção. A SEFAZ responde normalmente com um código de sta
 NFProtocoloInfo protocolo = resultado.getRetorno().getProtocoloInfo();
 switch (protocolo.getStatus()) { // texto, como devolvido pela SEFAZ
     case "100": // autorizada
+    case "120": // autorizada, com alerta
+    case "150": // autorizada, fora de prazo
         break;
     case "110": // uso denegado
         break;
@@ -504,6 +540,8 @@ Alguns códigos frequentes:
 | Código | Significado | O que fazer |
 |---|---|---|
 | 100 | Autorizado o uso da NF-e | Guardar o `nfeProc` |
+| 120 | Autorizado o uso da NF-e, com alerta (NT 2026.002, inicialmente só na NFC-e) | A nota está autorizada: guarde o `nfeProc`. O alerta avisa de uma inconsistência, mas não exige corrigir nem reenviar |
+| 150 | Autorizado o uso da NF-e, autorização fora de prazo | A nota está autorizada: guarde o `nfeProc` |
 | 110 | Uso denegado | A situação do emitente ou do destinatário impede a autorização; não adianta reenviar |
 | 204 | Duplicidade de NF-e | A nota já foi enviada; consulte pela chave de acesso em vez de reenviar |
 | 539 | Duplicidade de NF-e, com diferença na chave de acesso | A numeração já foi usada em outra nota: use outro número ou inutilize a faixa |
@@ -539,7 +577,8 @@ Para validar um XML contra os schemas oficiais sem enviá-lo, use `DFXMLValidado
 - Validação do XML contra os schemas (XSD) oficiais antes do envio.
 - Assinatura digital automática com certificado A1, e métodos que aceitam XML já assinado para A3.
 - Geração automática do QR Code da NFC-e.
-- Geração do DANFE da NF-e em PDF, com logotipo e créditos opcionais.
+- Geração do DANFE da NF-e em PDF, no leiaute da NT 2026.010, com logotipo, créditos opcionais e identificação e numeração em todas as folhas.
+- Geração do cupom DANFE da NFC-e em PDF (80 mm), com créditos e anexos opcionais, como o comprovante do TEF.
 - Geração da cadeia de certificados da SEFAZ.
 - Conversão entre objetos Java e XML nos dois sentidos.
 - Suporte a fuso horário configurável (`getTimeZone()`).
