@@ -370,7 +370,13 @@ class DanfeCanvasTest {
     /** Operadores do primeiro fluxo de conteudo da pagina, como texto. */
     private static String conteudoComoTexto(final byte[] pdf) throws Exception {
         try (final PDDocument documento = Loader.loadPDF(pdf); java.io.InputStream conteudo = documento.getPage(0).getContents()) {
-            return new String(conteudo.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1);
+            final java.io.ByteArrayOutputStream saida = new java.io.ByteArrayOutputStream();
+            final byte[] buffer = new byte[4096];
+            int lidos;
+            while ((lidos = conteudo.read(buffer)) != -1) {
+                saida.write(buffer, 0, lidos);
+            }
+            return new String(saida.toByteArray(), java.nio.charset.StandardCharsets.ISO_8859_1);
         }
     }
 
